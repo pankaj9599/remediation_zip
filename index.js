@@ -1,10 +1,9 @@
-
 import express from "express";
 
 const app = express();
 app.use(express.json());
 
-// Simple Logger
+// Logging middleware
 app.use((req, res, next) => {
   console.log(`[LOG] ${new Date().toISOString()} - ${req.method} ${req.url}`);
   next();
@@ -19,62 +18,72 @@ app.get("/health", (req, res) => {
   });
 });
 
-// 1. Restart Service
-app.post("/restart", (req, res) => {
-  const { service } = req.body;
-  res.json({
-    status: "success",
-    action: "restart",
-    service,
-    message: `Restarted ${service} (mock)`
-  });
-});
+// ALL-IN-ONE REMEDIATION ENDPOINT
+app.post("/remediate", (req, res) => {
+  const { action, service, replicas, message } = req.body;
 
-// 2. Scale Service
-app.post("/scale", (req, res) => {
-  const { service, replicas } = req.body;
-  res.json({
-    status: "success",
-    action: "scale",
-    service,
-    replicas,
-    message: `Scaled ${service} to ${replicas} replicas (mock)`
-  });
-});
+  if (!action) {
+    return res.status(400).json({
+      error: "Missing 'action' field. Provide: restart, scale, rollback, drain, notify"
+    });
+  }
 
-// 3. Rollback Config
-app.post("/rollback", (req, res) => {
-  const { service } = req.body;
-  res.json({
-    status: "success",
-    action: "rollback",
-    service,
-    message: `Rolled back config for ${service} (mock)`
-  });
-});
+  let response;
 
-// 4. Drain Traffic
-app.post("/drain", (req, res) => {
-  const { service } = req.body;
-  res.json({
-    status: "success",
-    action: "drain",
-    service,
-    message: `Traffic drained for ${service} (mock)`
-  });
-});
+  switch (action) {
+    case "restart":
+      response = {
+        status: "success",
+        action: "restart",
+        service,
+        message: `Restarted ${service} (mock)`
+      };
+      break;
 
-// 5. Notify On-Call
-app.post("/notify", (req, res) => {
-  const { message } = req.body;
-  res.json({
-    status: "success",
-    action: "notify",
-    message
-  });
+    case "scale":
+      response = {
+        status: "success",
+        action: "scale",
+        service,
+        replicas,
+        message: `Scaled ${service} to ${replicas} replicas (mock)`
+      };
+      break;
+
+    case "rollback":
+      response = {
+        status: "success",
+        action: "rollback",
+        service,
+        message: `Rolled back config for ${service} (mock)`
+      };
+      break;
+
+    case "drain":
+      response = {
+        status: "success",
+        action: "drain",
+        service,
+        message: `Traffic drained for ${service} (mock)`
+      };
+      break;
+
+    case "notify":
+      response = {
+        status: "success",
+        action: "notify",
+        message
+      };
+      break;
+
+    default:
+      response = { error: `Unknown action: ${action}` };
+  }
+
+  return res.json(response);
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("Remediation API running on port", PORT);
+  console.log("Unified Remediation API running on port", PORT);
 });
