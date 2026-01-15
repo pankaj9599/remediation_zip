@@ -13,7 +13,6 @@ app.use((req, res, next) => {
 // Validate env variables
 const CLOUDFLARE_API_TOKEN = process.env.CLOUDFLARE_API_TOKEN;
 const CLOUDFLARE_ZONE_ID = process.env.CLOUDFLARE_ZONE_ID;
-const CLOUDFLARE_EMAIL = process.env.CLOUDFLARE_EMAIL;
 
 if (!CLOUDFLARE_API_TOKEN || !CLOUDFLARE_ZONE_ID || !CLOUDFLARE_EMAIL) {
   console.error("❌ Missing Cloudflare ENV variables");
@@ -24,11 +23,9 @@ const CF = axios.create({
   baseURL: `https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}`,
   headers: {
     "Content-Type": "application/json",
-    "X-Auth-Key": CLOUDFLARE_API_TOKEN,
-    "X-Auth-Email": CLOUDFLARE_EMAIL
+    "Authorization": `Bearer ${CLOUDFLARE_API_TOKEN}`
   }
 });
-
 // Health Check
 app.get("/health", (req, res) => {
   res.json({
