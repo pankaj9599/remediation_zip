@@ -19,7 +19,7 @@ app.get("/health", (req, res) => {
 });
 
 // ALL-IN-ONE REMEDIATION ENDPOINT
-app.post("/remediate", (req, res) => {
+app.post("/", (req, res) => {
   const { action, service, replicas, message } = req.body;
 
   if (!action) {
