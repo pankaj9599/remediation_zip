@@ -14,6 +14,25 @@ const jira = axios.create({
   }
 });
 
+export function toADF(text) {
+  return {
+    type: "doc",
+    version: 1,
+    content: [
+      {
+        type: "paragraph",
+        content: [
+          {
+            type: "text",
+            text: String(text)
+          }
+        ]
+      }
+    ]
+  };
+}
+
+
 export async function createJiraTicket({
   summary,
   description,
