@@ -7,7 +7,7 @@
 import express from "express";
 import axios from "axios";
 //change 
-
+import fetch from "node-fetch";
 import { createJiraTicket, toADF } from "./jira.js";
 async function alertSRESlack(payload) {
   const webhook = process.env.SLACK_WEBHOOK_URL;
