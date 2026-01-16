@@ -69,7 +69,7 @@ app.get("/health", (req, res) => {
 // ------------------------------------------------------------------
 
 app.post("/", async (req, res) => {
-  const { action, severity, target = {}, issue, description } = req.body;
+  const { action, severity, target = {}, issue, description, block } = req.body;
 
   const ip = target.ip;
   const service = target.service;
@@ -90,52 +90,64 @@ app.post("/", async (req, res) => {
       const tempMinutes = getTempBanMinutes(severity);
       console.log(`⏳ Temp ban minutes for ${ip}: ${tempMinutes}`);
 
-      // Create Cloudflare block rule
-      const resp = await CF.post("/firewall/access_rules/rules", {
-        mode: "block",
-        configuration: { target: "ip", value: ip },
-        notes: `ThreatPilot block (${severity})`
-      });
+      // NEW CONDITION: Check if block is explicitly set to true OR if severity is low/medium
+      if (block === true || tempMinutes > 0) {
+        // Create Cloudflare block rule
+        const resp = await CF.post("/firewall/access_rules/rules", {
+          mode: "block",
+          configuration: { target: "ip", value: ip },
+          notes: `ThreatPilot block (${severity})`
+        });
 
-      const ruleId = resp.data.result.id;
+        const ruleId = resp.data.result.id;
 
-      // TEMPORARY block
-      if (tempMinutes > 0) {
-        // Clear previous timer if exists
-        if (tempBlocks[ip]?.timeout) clearTimeout(tempBlocks[ip].timeout);
+        // TEMPORARY block
+        if (tempMinutes > 0) {
+          // Clear previous timer if exists
+          if (tempBlocks[ip]?.timeout) clearTimeout(tempBlocks[ip].timeout);
 
-        const timeout = setTimeout(async () => {
-          console.log(`⏱ Unblocking ${ip} (timer expired)`);
+          const timeout = setTimeout(async () => {
+            console.log(`⏱ Unblocking ${ip} (timer expired)`);
 
-          try {
-            await CF.delete(`/firewall/access_rules/rules/${ruleId}`);
-          } catch (e) {
-            console.error("Cloudflare delete error:", e.response?.data || e.message);
-          }
+            try {
+              await CF.delete(`/firewall/access_rules/rules/${ruleId}`);
+            } catch (e) {
+              console.error("Cloudflare delete error:", e.response?.data || e.message);
+            }
 
-          delete tempBlocks[ip];
-        }, tempMinutes * 60 * 1000);
+            delete tempBlocks[ip];
+          }, tempMinutes * 60 * 1000);
 
-        tempBlocks[ip] = { rule_id: ruleId, timeout };
+          tempBlocks[ip] = { rule_id: ruleId, timeout };
 
+          return res.json({
+            status: "success",
+            action: "temp_block_ip",
+            ip,
+            severity,
+            duration_minutes: tempMinutes,
+            unblock_at: new Date(Date.now() + tempMinutes * 60000).toISOString()
+          });
+        }
+
+        // PERMANENT block
         return res.json({
           status: "success",
-          action: "temp_block_ip",
+          action: "block_ip",
           ip,
           severity,
-          duration_minutes: tempMinutes,
-          unblock_at: new Date(Date.now() + tempMinutes * 60000).toISOString()
+          permanent: true
+        });
+      } else {
+        // Block condition not met - skip blocking
+        return res.json({
+          status: "skipped",
+          action: "block_ip",
+          ip,
+          severity,
+          message: "Block condition not met (block flag not set and severity is high/critical)"
         });
       }
-
-      // PERMANENT block
-      return res.json({
-        status: "success",
-        action: "block_ip",
-        ip,
-        severity,
-        permanent: true
-      });
     }
 
     // ----------------------------------------------------------
@@ -249,7 +261,6 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () =>
   console.log(`🚀 Remediation API running on port ${PORT}`)
 );
-
 
 
 // import express from "express";
