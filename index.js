@@ -6,6 +6,9 @@
 
 import express from "express";
 import axios from "axios";
+//change 
+import { createJiraTicket } from "./jira.js";
+//change
 
 const app = express();
 app.use(express.json());
@@ -229,14 +232,49 @@ app.post("/", async (req, res) => {
         service
       });
     }
+    //ritesh
+
+    // if (action === "drain") {
+    //   return res.json({
+    //     status: "success",
+    //     action: "drain",
+    //     service
+    //   });
+    // }
+
+    //ritesh
 
     if (action === "drain") {
-      return res.json({
-        status: "success",
-        action: "drain",
-        service
-      });
-    }
+  if (!service) {
+    return res.status(400).json({ error: "Missing target.service" });
+  }
+
+  const jiraKey = await createJiraTicket({
+    summary: `[ThreatPilot] Drain Service ${service}`,
+    description: `
+🚨 ACTION REQUIRED: SERVICE DRAIN
+
+Service: ${service}
+Severity: ${severity}
+Issue: ${issue || "unknown"}
+Description: ${description || "N/A"}
+
+This action requires manual approval before draining traffic.
+`,
+    priority: severity === "critical" ? "Highest" : "High",
+    issueType: "Task",
+    labels: ["threatpilot", "drain", "manual-approval"]
+  });
+
+  return res.json({
+    status: "pending_approval",
+    action: "drain",
+    service,
+    jira_ticket: jiraKey,
+    message: "Drain action requires human approval via Jira"
+  });
+}
+
 
     if (action === "notify") {
       return res.json({
