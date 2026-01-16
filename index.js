@@ -1,6 +1,18 @@
 import express from "express";
 import axios from "axios";
-import { storage } from "@ondemand/storage";   // IMPORTANT: OnDemand KV
+
+// ----------------------------
+// Load OnDemand KV Storage
+// ----------------------------
+let storage = null;
+
+try {
+  const mod = await import("ondemand:storage");  // ⚠️ Correct virtual module
+  storage = mod.storage;
+  console.log("✅ OnDemand Storage loaded");
+} catch (err) {
+  console.log("⚠️ Storage not available (local mode)");
+}
 
 const app = express();
 app.use(express.json());
@@ -39,18 +51,18 @@ app.get("/health", (req, res) => {
 
 /*
 ======================================================
- TEMP BLOCK DURATION RULES (Modify if needed)
+ TEMPORARY BLOCK DURATIONS (TESTING)
 ======================================================
-low → 24h  
-medium → 48h  
-high/critical → permanent
+ low     → 1 minute  
+ medium  → 2 minutes  
+ high    → permanent  
 ======================================================
 */
 
-function getTempBanHours(severity) {
-  if (severity === "low") return 24;     // 1 day
-  if (severity === "medium") return 48;  // 2 days
-  return 0; // high/critical → permanent block
+function getTempBanMinutes(severity) {
+  if (severity === "low") return 1;
+  if (severity === "medium") return 2;
+  return 0; // Permanent
 }
 
 /*
@@ -60,7 +72,8 @@ function getTempBanHours(severity) {
 */
 
 app.post("/", async (req, res) => {
-  const { action, severity, target = {}, issue, description } = req.body;
+  const { action, severity, target = {} } = req.body;
+
   const ip = target.ip;
   const service = target.service;
   const replicas = target.replicas;
@@ -74,27 +87,26 @@ app.post("/", async (req, res) => {
 
       /*
       ======================================================
-        1. TEMP BLOCK / PERMANENT BLOCK BASED ON SEVERITY
+        1. BLOCK IP (TEMPORARY OR PERMANENT)
       ======================================================
       */
       case "block_ip":
         if (!ip) return res.status(400).json({ error: "Missing IP" });
 
-        const tempHours = getTempBanHours(severity);
-        console.log("Temp block hours:", tempHours);
+        const tempMinutes = getTempBanMinutes(severity);
 
-        // Step 1: Create block rule
+        // Create block
         const resp = await CF.post("/firewall/access_rules/rules", {
           mode: "block",
           configuration: { target: "ip", value: ip },
-          notes: `ThreatPilot Block (${severity})`
+          notes: `ThreatPilot (${severity})`
         });
 
         const ruleId = resp.data.result.id;
 
-        // Step 2: If TEMP BLOCK, store expiration
-        if (tempHours > 0) {
-          const expiresAt = Date.now() + tempHours * 3600 * 1000;
+        // Temporary block
+        if (tempMinutes > 0 && storage) {
+          const expiresAt = Date.now() + tempMinutes * 60 * 1000;
 
           await storage.put(
             `blocked:${ip}`,
@@ -111,7 +123,7 @@ app.post("/", async (req, res) => {
             action: "temp_block_ip",
             ip,
             severity,
-            duration_hours: tempHours,
+            duration_minutes: tempMinutes,
             unblock_at: new Date(expiresAt).toISOString()
           });
         }
@@ -128,7 +140,7 @@ app.post("/", async (req, res) => {
 
       /*
       ======================================================
-        2. UNBLOCK IP (MANUAL OR EXPIRATION)
+        2. UNBLOCK IP
       ======================================================
       */
       case "unblock_ip": {
@@ -137,27 +149,18 @@ app.post("/", async (req, res) => {
         const list = await CF.get("/firewall/access_rules/rules");
         const rule = list.data.result.find(r => r.configuration.value === ip);
 
-        if (!rule) {
-          return res.json({
-            status: "not_found",
-            message: "IP was not blocked"
-          });
-        }
+        if (!rule) return res.json({ status: "not_found" });
 
         await CF.delete(`/firewall/access_rules/rules/${rule.id}`);
-        await storage.delete(`blocked:${ip}`);
 
-        return res.json({
-          status: "success",
-          action: "unblock_ip",
-          ip
-        });
+        if (storage) await storage.delete(`blocked:${ip}`);
+
+        return res.json({ status: "success", action: "unblock_ip", ip });
       }
-
 
       /*
       ======================================================
-        3. LIST TEMP + PERMANENT BLOCKED IPs
+        3. LIST BLOCKED IPS
       ======================================================
       */
       case "list_blocked": {
@@ -168,56 +171,29 @@ app.post("/", async (req, res) => {
 
         return res.json({
           status: "success",
-          action: "list_blocked",
           ips: blockedIps
         });
       }
 
-
       /*
       ======================================================
-        4. SERVICE ACTIONS (MOCK)
+        4. MOCK SERVICE ACTIONS
       ======================================================
       */
       case "restart":
-        return res.json({
-          status: "success",
-          action: "restart",
-          service,
-          message: `Restarted ${service} (mock)`
-        });
+        return res.json({ status: "success", action: "restart", service });
 
       case "scale":
-        return res.json({
-          status: "success",
-          action: "scale",
-          service,
-          replicas,
-          message: `Scaled ${service} to ${replicas} replicas`
-        });
+        return res.json({ status: "success", action: "scale", service, replicas });
 
       case "rollback":
-        return res.json({
-          status: "success",
-          action: "rollback",
-          service,
-          message: `Rollback applied to ${service}`
-        });
+        return res.json({ status: "success", action: "rollback", service });
 
       case "drain":
-        return res.json({
-          status: "success",
-          action: "drain",
-          service,
-          message: `Traffic drained for ${service}`
-        });
+        return res.json({ status: "success", action: "drain", service });
 
       case "notify":
-        return res.json({
-          status: "success",
-          action: "notify",
-          message: "SRE has been notified"
-        });
+        return res.json({ status: "success", action: "notify" });
 
       default:
         return res.status(400).json({ error: `Unknown action: ${action}` });
@@ -235,12 +211,15 @@ app.post("/", async (req, res) => {
 
 /*
 ======================================================
- SCHEDULED CLEANUP ENDPOINT
- This will remove expired temporary blocks
+ CLEANUP: REMOVE EXPIRED TEMP BLOCKS
 ======================================================
 */
 
 app.post("/cleanup", async (req, res) => {
+  if (!storage) {
+    return res.json({ status: "disabled" });
+  }
+
   const expired = [];
 
   for await (const key of storage.list("blocked:")) {
@@ -259,11 +238,11 @@ app.post("/cleanup", async (req, res) => {
   });
 });
 
-// START SERVER
+// Start server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () =>
-  console.log(`🔥 Remediation API running on port ${PORT}`)
-);
+app.listen(PORT, () => {
+  console.log("🔥 Remediation API running on port", PORT);
+});
 
 
 // import express from "express";
