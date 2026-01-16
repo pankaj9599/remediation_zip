@@ -13,6 +13,14 @@ import { createJiraTicket, toADF } from "./jira.js";
 const app = express();
 app.use(express.json());
 
+function priorityFromSeverity(severity) {
+  if (severity === "critical") return "Highest";
+  if (severity === "high") return "High";
+  if (severity === "medium") return "Medium";
+  return "Low";
+}
+
+
 // ------------------------------------------------------------------
 //  In-Memory Temp Block Store (per-IP timers)
 // ------------------------------------------------------------------
@@ -223,26 +231,118 @@ app.post("/", async (req, res) => {
     // 4) MOCK SERVICE ACTIONS
     // ----------------------------------------------------------
 
+    // if (action === "restart") {
+    //   return res.json({ status: "success", action: "restart", service });
+    // }
+
     if (action === "restart") {
-      return res.json({ status: "success", action: "restart", service });
-    }
+  if (!service) {
+    return res.status(400).json({ error: "Missing target.service" });
+  }
+
+  const jiraKey = await createJiraTicket({
+    summary: `[ThreatPilot] Restart Service ${service}`,
+    description: toADF(
+      `ACTION: RESTART SERVICE
+
+Service: ${service}
+Severity: ${severity}
+Issue: ${issue || "unknown"}
+
+${userDescription || ""}`
+    ),
+    priority: priorityFromSeverity(severity),
+    issueType: "Task",
+    labels: ["threatpilot", "restart", "manual-approval"]
+  });
+
+  return res.json({
+    status: "pending_approval",
+    action: "restart",
+    service,
+    jira_ticket: jiraKey
+  });
+}
+
+
+    // if (action === "scale") {
+    //   return res.json({
+    //     status: "success",
+    //     action: "scale",
+    //     service,
+    //     replicas
+    //   });
+    // }
 
     if (action === "scale") {
-      return res.json({
-        status: "success",
-        action: "scale",
-        service,
-        replicas
-      });
-    }
+  if (!service) {
+    return res.status(400).json({ error: "Missing target.service" });
+  }
+
+  const jiraKey = await createJiraTicket({
+    summary: `[ThreatPilot] Scale Service ${service}`,
+    description: toADF(
+      `ACTION: SCALE SERVICE
+
+Service: ${service}
+Target replicas: ${replicas ?? "not specified"}
+Severity: ${severity}
+Issue: ${issue || "unknown"}
+
+${userDescription || ""}`
+    ),
+    priority: priorityFromSeverity(severity),
+    issueType: "Task",
+    labels: ["threatpilot", "scale", "manual-approval"]
+  });
+
+  return res.json({
+    status: "pending_approval",
+    action: "scale",
+    service,
+    replicas,
+    jira_ticket: jiraKey
+  });
+}
+
+    // if (action === "rollback") {
+    //   return res.json({
+    //     status: "success",
+    //     action: "rollback",
+    //     service
+    //   });
+    // }
 
     if (action === "rollback") {
-      return res.json({
-        status: "success",
-        action: "rollback",
-        service
-      });
-    }
+  if (!service) {
+    return res.status(400).json({ error: "Missing target.service" });
+  }
+
+  const jiraKey = await createJiraTicket({
+    summary: `[ThreatPilot] Rollback Required for ${service}`,
+    description: toADF(
+      `ACTION: ROLLBACK SERVICE
+
+Service: ${service}
+Severity: ${severity}
+Issue: ${issue || "unknown"}
+
+${userDescription || ""}`
+    ),
+    priority: priorityFromSeverity(severity),
+    issueType: "Task",
+    labels: ["threatpilot", "rollback", "manual-approval"]
+  });
+
+  return res.json({
+    status: "pending_approval",
+    action: "rollback",
+    service,
+    jira_ticket: jiraKey
+  });
+}
+
+    
     //ritesh
 
     // if (action === "drain") {
