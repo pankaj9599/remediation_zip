@@ -251,16 +251,21 @@ app.post("/", async (req, res) => {
 
   const jiraKey = await createJiraTicket({
     summary: `[ThreatPilot] Drain Service ${service}`,
-    description: `
-🚨 ACTION REQUIRED: SERVICE DRAIN
-
-Service: ${service}
-Severity: ${severity}
-Issue: ${issue || "unknown"}
-Description: ${description || "N/A"}
-
-This action requires manual approval before draining traffic.
-`,
+    description:{
+    type: "doc",
+    version: 1,
+    content: [
+      {
+        type: "paragraph",
+        content: [
+          {
+            type: "text",
+            text: `ACTION: DRAIN SERVICE\n\nService: ${service}\nSeverity: ${severity}\nIssue: ${issue || "unknown"}\n\n${description || ""}`
+          }
+        ]
+      }
+    ]
+  },
     priority: severity === "critical" ? "Highest" : "High",
     issueType: "Task",
     labels: ["threatpilot", "drain", "manual-approval"]
