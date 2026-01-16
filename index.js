@@ -7,7 +7,7 @@
 import express from "express";
 import axios from "axios";
 //change 
-import { createJiraTicket } from "./jira.js";
+import { createJiraTicket, toADF } from "./jira.js";
 //change
 
 const app = express();
@@ -78,7 +78,18 @@ app.get("/health", (req, res) => {
 // ------------------------------------------------------------------
 
 app.post("/", async (req, res) => {
-  const { action, severity, target = {}, issue, description, block } = req.body;
+
+  
+  // const { action, severity, target = {}, issue, description, block } = req.body;
+  const {
+  action,
+  severity,
+  target = {},
+  issue,
+  description: userDescription,
+  block
+} = req.body;
+//change
 
   const ip = target.ip;
   const service = target.service;
@@ -244,6 +255,41 @@ app.post("/", async (req, res) => {
 
     //ritesh
 
+//     if (action === "drain") {
+//   if (!service) {
+//     return res.status(400).json({ error: "Missing target.service" });
+//   }
+
+//   const jiraKey = await createJiraTicket({
+//     summary: `[ThreatPilot] Drain Service ${service}`,
+//     description:{
+//     type: "doc",
+//     version: 1,
+//     content: [
+//       {
+//         type: "paragraph",
+//         content: [
+//           {
+//             type: "text",
+//             text: `ACTION: DRAIN SERVICE\n\nService: ${service}\nSeverity: ${severity}\nIssue: ${issue || "unknown"}\n\n${description || ""}`
+//           }
+//         ]
+//       }
+//     ]
+//   },
+//     priority: severity === "critical" ? "Highest" : "High",
+//     issueType: "Task",
+//     labels: ["threatpilot", "drain", "manual-approval"]
+//   });
+
+//   return res.json({
+//     status: "pending_approval",
+//     action: "drain",
+//     service,
+//     jira_ticket: jiraKey,
+//     message: "Drain action requires human approval via Jira"
+//   });
+// }
     if (action === "drain") {
   if (!service) {
     return res.status(400).json({ error: "Missing target.service" });
@@ -251,21 +297,15 @@ app.post("/", async (req, res) => {
 
   const jiraKey = await createJiraTicket({
     summary: `[ThreatPilot] Drain Service ${service}`,
-    description:{
-    type: "doc",
-    version: 1,
-    content: [
-      {
-        type: "paragraph",
-        content: [
-          {
-            type: "text",
-            text: `ACTION: DRAIN SERVICE\n\nService: ${service}\nSeverity: ${severity}\nIssue: ${issue || "unknown"}\n\n${description || ""}`
-          }
-        ]
-      }
-    ]
-  },
+    description: toADF(
+      `ACTION: DRAIN SERVICE
+
+Service: ${service}
+Severity: ${severity}
+Issue: ${issue || "unknown"}
+
+${userDescription || ""}`
+    ),
     priority: severity === "critical" ? "Highest" : "High",
     issueType: "Task",
     labels: ["threatpilot", "drain", "manual-approval"]
@@ -275,8 +315,7 @@ app.post("/", async (req, res) => {
     status: "pending_approval",
     action: "drain",
     service,
-    jira_ticket: jiraKey,
-    message: "Drain action requires human approval via Jira"
+    jira_ticket: jiraKey
   });
 }
 
