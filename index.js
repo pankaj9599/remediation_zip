@@ -264,6 +264,41 @@
  // --------------------------------------------------
 // Action Normalization (Agent → Infra Remediator)
 // --------------------------------------------------
+import fetch from "node-fetch";
+
+// --------------------------------------------------
+// Slack Alert
+// --------------------------------------------------
+async function alertSRESlack(payload) {
+  const webhook = process.env.SLACK_WEBHOOK_URL;
+
+  if (!webhook) {
+    console.error("❌ SLACK_WEBHOOK_URL not configured");
+    return;
+  }
+
+  const response = await fetch(webhook, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      text: `🚨 *ThreatPilot Alert*
+*Action:* ${payload.action}
+*Severity:* ${payload.severity}
+*Issue:* ${payload.issue || "unknown"}
+*Target:* ${JSON.stringify(payload.target, null, 2)}`
+    })
+  });
+
+  const text = await response.text();
+
+  if (!response.ok) {
+    console.error("❌ Slack webhook failed:", response.status, text);
+  } else {
+    console.log("✅ Slack alert sent successfully");
+  }
+}
+
+
 function normalizeAction(action) {
   const map = {
     // IP actions
@@ -724,12 +759,20 @@ ${userDescription || ""}`
 
 
     if (action === "notify") {
-      return res.json({
-        status: "success",
-        action: "notify",
-        message: "SRE notified"
-      });
-    }
+  await alertSRESlack({
+    action,
+    severity,
+    issue,
+    target
+  });
+
+  return res.json({
+    status: "success",
+    action: "notify",
+    message: "SRE notified via Slack"
+  });
+}
+
 
     return res.status(400).json({ error: `Unknown action: ${action}` });
 
